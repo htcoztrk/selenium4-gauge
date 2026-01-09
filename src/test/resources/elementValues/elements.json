@@ -1,0 +1,23 @@
+[
+  {
+    "key": "signUpButton_LoginPage",
+    "value": "switch-sign-up",
+    "type": "id"
+  },
+  {
+    "key": "loginSwitch_LoginPage",
+    "value": "div.login.form-peice.transition.switched",
+    "type": "css"
+  },
+  {
+    "key": "signIn_RegisterPage",
+    "value": "form[class='signup-form']>div:nth-of-type(8)>a[class^='switch']",
+    "type": "css"
+  },
+  {
+    "key": "switch_LoginPage",
+    "value": "div.login.form-peice.transition",
+    "type": "css"
+  }
+
+]

@@ -1,0 +1,18 @@
+# <url> sayfasına gelinir
+* <url> adresine git
+* Şu anki url <url> ile aynı mı
+
+
+# Sign up sayfasına gelinir
+* "signUpButton_LoginPage" elementinin görünür olması kontrol edilir
+* "signUpButton_LoginPage" elementine tıkla
+
+# Sign up kontrolü yapılır
+* "loginSwitch_LoginPage" elementinin görünür olması kontrol edilir
+* "1" saniye bekle
+
+# Login sayfasına gelinir
+* "signIn_RegisterPage" elementinin görünür olması kontrol edilir
+* "signIn_RegisterPage" elementine tıkla
+* "switch_LoginPage" elementinin görünür olması kontrol edilir
+
