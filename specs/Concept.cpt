@@ -16,3 +16,9 @@
 * "signIn_RegisterPage" elementine tıkla
 * "switch_LoginPage" elementinin görünür olması kontrol edilir
 
+
+# Fail sayfasına gelinir
+* "signIn_RegisterPage" elementinin görünür olması kontrol edilir
+* "signIn_RegisterPage" elementine tıkla
+* "switch_LoginfailllPage" elementinin görünür olması kontrol edilir
+
