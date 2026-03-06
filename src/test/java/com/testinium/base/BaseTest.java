@@ -61,7 +61,7 @@ public class BaseTest {
             initElementsOnce();
 
             // ✅ BURAYA EKLE — dosya URL'i varsa node'a push et
-            String fileUrl = System.getenv("/Users/testinium/Desktop/reports/executorLog.out");
+            String fileUrl = "/Users/testinium/Desktop/reports/executorLog.out";
             if (fileUrl != null && !fileUrl.trim().isEmpty()) {
                 String nodeFilePath = pushFileToNode(driver, remoteUrl, fileUrl);
                 log.info("File pushed to node. Node path: {}", nodeFilePath);
