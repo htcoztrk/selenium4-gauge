@@ -10,17 +10,29 @@ import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.interactions.Actions;
+import org.openqa.selenium.remote.RemoteWebDriver;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
+import java.io.InputStream;
 import java.lang.reflect.Type;
+import java.net.URI;
 import java.net.URL;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Slf4j
 public class BaseTest {
@@ -48,12 +60,101 @@ public class BaseTest {
             // Load element repository once (safe)
             initElementsOnce();
 
+            // ✅ BURAYA EKLE — dosya URL'i varsa node'a push et
+            String fileUrl = System.getenv("/Users/testinium/Desktop/reports/executorLog.out");
+            if (fileUrl != null && !fileUrl.trim().isEmpty()) {
+                String nodeFilePath = pushFileToNode(driver, remoteUrl, fileUrl);
+                log.info("File pushed to node. Node path: {}", nodeFilePath);
+                // Test kodunda kullanmak için sakla
+                saveValue("nodeFilePath", nodeFilePath);
+            }
+
             log.info("WebDriver initialized successfully. Remote URL: {}", remoteUrl);
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize Testinium WebDriver", e);
         }
     }
 
+    private String pushFileToNode(WebDriver driver, String remoteUrl, String fileUrl) throws Exception {
+
+        log.info("=== pushFileToNode START ===");
+        log.info("File URL/Path: {}", fileUrl);
+
+        // 1. URL'den executor'a geçici indir
+        Path tempFile = Files.createTempFile("test-file-",
+                Path.of(new URL(fileUrl).getPath()).getFileName().toString());
+
+        try (InputStream in = new URL(fileUrl).openStream()) {
+            Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
+        }
+        log.info("File downloaded to executor temp path: {}", tempFile.toAbsolutePath());
+        log.info("Executor temp file size: {} bytes", Files.size(tempFile));
+
+        try {
+            // 2. Zip'le
+            Path zipFile = tempFile.resolveSibling(tempFile.getFileName() + ".zip");
+            try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipFile))) {
+                zos.putNextEntry(new ZipEntry(tempFile.getFileName().toString()));
+                Files.copy(tempFile, zos);
+                zos.closeEntry();
+            }
+            log.info("Zip created at: {}", zipFile.toAbsolutePath());
+            log.info("Zip file size: {} bytes", Files.size(zipFile));
+
+            // 3. Base64 encode et
+            String base64 = Base64.getEncoder()
+                    .encodeToString(Files.readAllBytes(zipFile));
+            log.info("Base64 encoded length: {} chars", base64.length());
+            Files.deleteIfExists(zipFile);
+            log.info("Zip file deleted after encoding");
+
+            // 4. Grid URL ve session bilgisi
+            String gridBaseUrl = remoteUrl.replace("/wd/hub", "");
+            String sessionId = ((RemoteWebDriver) driver).getSessionId().toString();
+            String endpoint = gridBaseUrl + "/session/" + sessionId + "/file";
+            log.info("Grid base URL: {}", gridBaseUrl);
+            log.info("Session ID: {}", sessionId);
+            log.info("Pushing file to node via endpoint: {}", endpoint);
+
+            // 5. Node'a push et
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"file\":\"" + base64 + "\"}"))
+                    .build();
+
+            HttpResponse<String> response = client.send(request,
+                    HttpResponse.BodyHandlers.ofString());
+
+            log.info("Response status code: {}", response.statusCode());
+            log.info("Response body (raw): {}", response.body());
+
+            // 6. Node'daki path'i parse et
+            String nodeFilePath = new com.google.gson.JsonParser()
+                    .parse(response.body())
+                    .getAsJsonObject()
+                    .get("value")
+                    .getAsString();
+
+            log.info("File successfully pushed to node!");
+            log.info("Node file path: {}", nodeFilePath);
+            log.info("=== pushFileToNode END ===");
+
+            return nodeFilePath;
+
+        } catch (Exception e) {
+            log.error("Failed to push file to node!", e);
+            log.error("Remote URL: {}", remoteUrl);
+            log.error("File URL: {}", fileUrl);
+            log.error("Session ID: {}", ((RemoteWebDriver) driver).getSessionId());
+            throw e;
+
+        } finally {
+            Files.deleteIfExists(tempFile);
+            log.info("Executor temp file cleaned up: {}", tempFile.toAbsolutePath());
+        }
+    }
     @AfterSuite
     public void tearDown() {
         log.info("========== Gauge AfterSuite: Quitting WebDriver ==========");
