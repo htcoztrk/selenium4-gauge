@@ -163,6 +163,8 @@ public class BaseTest {
             log.info("File successfully pushed to node!");
             log.info("Node file path: {}", nodeFilePath);
             log.info("=== pushFileToNode END ===");
+            System.err.println("=== pushFileToNode END ===");
+            System.err.println("Node file path: "+ nodeFilePath);
 
             return nodeFilePath;
 
