@@ -80,7 +80,7 @@ public class BaseTest {
         log.info("=== pushFileToNode START ===");
         log.info("File path: {}", filePath);
 
-        // 1. Local path'i direkt oku — new URL() yok
+        // 1. Local path'i kontrol et
         Path sourcePath = Path.of(filePath);
         if (!sourcePath.toFile().exists()) {
             throw new RuntimeException("File not found on executor: " + filePath);
@@ -89,7 +89,7 @@ public class BaseTest {
         log.info("File size: {} bytes", Files.size(sourcePath));
 
         // 2. Zip'le
-        Path zipFile = Path.of(filePath + ".zip");
+        Path zipFile = Files.createTempFile("node-upload-", ".zip");
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipFile))) {
             zos.putNextEntry(new ZipEntry(sourcePath.getFileName().toString()));
             Files.copy(sourcePath, zos);
@@ -100,8 +100,8 @@ public class BaseTest {
 
         try {
             // 3. Base64 encode et
-            String base64 = Base64.getEncoder()
-                    .encodeToString(Files.readAllBytes(zipFile));
+            byte[] zipBytes = Files.readAllBytes(zipFile);
+            String base64 = Base64.getEncoder().encodeToString(zipBytes);
             log.info("Base64 encoded length: {} chars", base64.length());
 
             // 4. Grid URL ve session bilgisi
@@ -113,25 +113,52 @@ public class BaseTest {
             log.info("Pushing to endpoint: {}", endpoint);
 
             // 5. Node'a push et
+            String requestBody = "{\"file\":\"" + base64 + "\"}";
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString("{\"file\":\"" + base64 + "\"}"))
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
 
-            HttpResponse<String> response = client.send(request,
-                    HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Response status code: {}", response.statusCode());
             log.info("Response body (raw): {}", response.body());
 
-            // 6. Node'daki path'i parse et
-            String nodeFilePath = new com.google.gson.JsonParser()
-                    .parse(response.body())
-                    .getAsJsonObject()
-                    .get("value")
-                    .getAsString();
+            // 6. Response'u parse et
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Node file push failed. Status: "
+                        + response.statusCode() + " Body: " + response.body());
+            }
+
+            com.google.gson.JsonElement root = com.google.gson.JsonParser.parseString(response.body());
+            log.info("Response root type: {}", root.getClass().getSimpleName());
+
+            if (!root.isJsonObject()) {
+                throw new RuntimeException("Response is not a JSON object: " + response.body());
+            }
+
+            com.google.gson.JsonElement valueElement = root.getAsJsonObject().get("value");
+            log.info("Value element type: {}", valueElement.getClass().getSimpleName());
+            log.info("Value element raw: {}", valueElement);
+
+            String nodeFilePath;
+            if (valueElement.isJsonPrimitive()) {
+                nodeFilePath = valueElement.getAsString();
+            } else if (valueElement.isJsonObject()) {
+                com.google.gson.JsonObject valueObj = valueElement.getAsJsonObject();
+                log.info("Value is nested object. Keys: {}", valueObj.keySet());
+                if (valueObj.has("path")) {
+                    nodeFilePath = valueObj.get("path").getAsString();
+                } else if (valueObj.has("value")) {
+                    nodeFilePath = valueObj.get("value").getAsString();
+                } else {
+                    throw new RuntimeException("Cannot extract path from nested value: " + valueObj);
+                }
+            } else {
+                throw new RuntimeException("Unexpected value element type: " + valueElement);
+            }
 
             log.info("File successfully pushed to node!");
             log.info("Node file path: {}", nodeFilePath);
@@ -140,7 +167,10 @@ public class BaseTest {
             return nodeFilePath;
 
         } catch (Exception e) {
-            log.error("Failed to push file to node!", e);
+            log.error("=== pushFileToNode FAILED ===");
+            log.error("Remote URL: {}", remoteUrl);
+            log.error("File path: {}", filePath);
+            log.error("Error: {}", e.getMessage(), e);
             throw e;
 
         } finally {
@@ -148,7 +178,6 @@ public class BaseTest {
             log.info("Zip file cleaned up: {}", zipFile.toAbsolutePath());
         }
     }
-
     @AfterSuite
     public void tearDown() {
         log.info("========== Gauge AfterSuite: Quitting WebDriver ==========");
