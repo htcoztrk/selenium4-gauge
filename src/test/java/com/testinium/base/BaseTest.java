@@ -75,38 +75,34 @@ public class BaseTest {
         }
     }
 
-    private String pushFileToNode(WebDriver driver, String remoteUrl, String fileUrl) throws Exception {
+    private String pushFileToNode(WebDriver driver, String remoteUrl, String filePath) throws Exception {
 
         log.info("=== pushFileToNode START ===");
-        log.info("File URL/Path: {}", fileUrl);
+        log.info("File path: {}", filePath);
 
-        // 1. URL'den executor'a geçici indir
-        Path tempFile = Files.createTempFile("test-file-",
-                Path.of(new URL(fileUrl).getPath()).getFileName().toString());
-
-        try (InputStream in = new URL(fileUrl).openStream()) {
-            Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
+        // 1. Local path'i direkt oku — new URL() yok
+        Path sourcePath = Path.of(filePath);
+        if (!sourcePath.toFile().exists()) {
+            throw new RuntimeException("File not found on executor: " + filePath);
         }
-        log.info("File downloaded to executor temp path: {}", tempFile.toAbsolutePath());
-        log.info("Executor temp file size: {} bytes", Files.size(tempFile));
+        log.info("File found on executor: {}", sourcePath.toAbsolutePath());
+        log.info("File size: {} bytes", Files.size(sourcePath));
+
+        // 2. Zip'le
+        Path zipFile = Path.of(filePath + ".zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipFile))) {
+            zos.putNextEntry(new ZipEntry(sourcePath.getFileName().toString()));
+            Files.copy(sourcePath, zos);
+            zos.closeEntry();
+        }
+        log.info("Zip created at: {}", zipFile.toAbsolutePath());
+        log.info("Zip file size: {} bytes", Files.size(zipFile));
 
         try {
-            // 2. Zip'le
-            Path zipFile = tempFile.resolveSibling(tempFile.getFileName() + ".zip");
-            try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipFile))) {
-                zos.putNextEntry(new ZipEntry(tempFile.getFileName().toString()));
-                Files.copy(tempFile, zos);
-                zos.closeEntry();
-            }
-            log.info("Zip created at: {}", zipFile.toAbsolutePath());
-            log.info("Zip file size: {} bytes", Files.size(zipFile));
-
             // 3. Base64 encode et
             String base64 = Base64.getEncoder()
                     .encodeToString(Files.readAllBytes(zipFile));
             log.info("Base64 encoded length: {} chars", base64.length());
-            Files.deleteIfExists(zipFile);
-            log.info("Zip file deleted after encoding");
 
             // 4. Grid URL ve session bilgisi
             String gridBaseUrl = remoteUrl.replace("/wd/hub", "");
@@ -114,7 +110,7 @@ public class BaseTest {
             String endpoint = gridBaseUrl + "/session/" + sessionId + "/file";
             log.info("Grid base URL: {}", gridBaseUrl);
             log.info("Session ID: {}", sessionId);
-            log.info("Pushing file to node via endpoint: {}", endpoint);
+            log.info("Pushing to endpoint: {}", endpoint);
 
             // 5. Node'a push et
             HttpClient client = HttpClient.newHttpClient();
@@ -145,16 +141,14 @@ public class BaseTest {
 
         } catch (Exception e) {
             log.error("Failed to push file to node!", e);
-            log.error("Remote URL: {}", remoteUrl);
-            log.error("File URL: {}", fileUrl);
-            log.error("Session ID: {}", ((RemoteWebDriver) driver).getSessionId());
             throw e;
 
         } finally {
-            Files.deleteIfExists(tempFile);
-            log.info("Executor temp file cleaned up: {}", tempFile.toAbsolutePath());
+            Files.deleteIfExists(zipFile);
+            log.info("Zip file cleaned up: {}", zipFile.toAbsolutePath());
         }
     }
+
     @AfterSuite
     public void tearDown() {
         log.info("========== Gauge AfterSuite: Quitting WebDriver ==========");
